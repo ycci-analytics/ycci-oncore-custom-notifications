@@ -10,50 +10,16 @@ from pretty_html_table import build_table
 
 load_dotenv()
 
+# Get and set database credentials
 un = os.environ.get('ONCORE_USER')
 cs = os.environ.get('ONCORE_SERVERNAME')
 pw = os.environ.get('ONCORE_PASSWORD')
 
-print(un)
-
-# connect to oracle application database and get a dataframe from relevant query
-with oracledb.connect(user=un, password=pw, dsn=cs) as connection:
-    with connection.cursor() as cursor:
-       cursor.execute("select * from oncore_report_ro.get_latest_rpe_staff_warnings")
-       col_names = [c.name for c in cursor.description]
-       data = cursor.fetchall()
-       df = pandas.DataFrame(data, columns=col_names)
-       
-df['ONCORE_CONTACT_DETAIL_URL'] = df['ONCORE_CONTACT_DETAIL_URL'].apply(lambda x: '<a href="{0}">link</a>'.format(x))
-
-df = df[["PROTOCOL_NO","RPE_SENT_DATE","RPE_SUBMITTER_EMAIL","STAFF_ROLE","STAFF_FULL_NAME","ONCORE_CONTACT_DETAIL_URL"]] 
-print(df)
-
-#iterate trough rows and send email
-grp = df.groupby('RPE_SUBMITTER_EMAIL') #group data by email
-sent_mail = []
-for index, row in df.iterrows():
-    if row['RPE_SUBMITTER_EMAIL'] in sent_mail:
-        pass
-    else:
-        alertname = "RPE Staff Warning"
-        toaddr = "nicholas.vankuren@yale.edu"
-        bcc = ['nicholas.vankuren@yale.edu']
-        fromname = "OnCore Notifications - {} ".format(alertname)
-        fromaddr = "no-reply@oncore_yale.edu"
-        sendemail = row['RPE_SUBMITTER_EMAIL']
-        sent_mail.append(sendemail)
-        msg = MIMEMultipart("alternative")
-        msg["From"] = "{} <{}>".format(fromname, fromaddr)
-        msg["To"] = [toaddr] + bcc
-        msg["Subject"] = "OnCore Alert: RPE Staff Warning"
-        table = grp.get_group(sendemail).to_html(index = False, render_links=True)
-        table = html.unescape(table)
-
-
-        # Create the body of the message (a plain-text and an HTML version).
-        text = "Placeholder text for now"
-        html = '''\
+# Set variables that can be updated for each notification script
+sql_query = "select * from oncore_report_ro.get_latest_rpe_staff_warnings"
+alert_name = "RPE Staff Warning"
+to_email = 'RPE_SUBMITTER_EMAIL'
+email_body = '''\
         <html>
         <head></head>
         <body>
@@ -67,24 +33,57 @@ for index, row in df.iterrows():
             </p>
         </body>
         </html>
-        '''.format(TABLE = table)
+        '''
 
-        print(html)
+# connect to oracle application database and get a dataframe from relevant query
+with oracledb.connect(user=un, password=pw, dsn=cs) as connection:
+    with connection.cursor() as cursor:
+       cursor.execute(sql_query)
+       col_names = [c.name for c in cursor.description]
+       data = cursor.fetchall()
+       df = pandas.DataFrame(data, columns=col_names)
 
-        #part1 = MIMEText(html, 'html')
+# Format any url fields as links for html table.       
+df['ONCORE_CONTACT_DETAIL_URL'] = df['ONCORE_CONTACT_DETAIL_URL'].apply(lambda x: '<a href="{0}">link</a>'.format(x))
 
-        # # Attach parts into message container.
-        # # According to RFC 2046, the last part of a multipart message, in this case
-        # # the HTML message, is best and preferred.
-        # msg.attach(part1)
+#iterate trough rows and send email
+grp = df.groupby(to_email) #group data by email
+sent_mail = []
+for index, row in df.iterrows():
+    if row[to_email] in sent_mail:
+        pass
+    else:
+        toaddr = ["nicholas.vankuren@yale.edu"]
+        bcc = ['nicholas.vankuren@yale.edu']
+        fromname = "OnCore Notifications"
+        fromaddr = "no-reply@oncore_yale.edu"
+        sent_mail.append(row[to_email])
+        msg = MIMEMultipart("alternative")
+        msg["From"] = "{} <{}>".format(fromname, fromaddr)
+        msg["To"] = ', ' .join(toaddr)
+        msg["Bcc"] = ', ' .join(bcc)
+        msg["Subject"] = "OnCore Alert: {}".format(alert_name)
+        email_table = df[["PROTOCOL_NO","RPE_SENT_DATE","STAFF_ROLE","STAFF_FULL_NAME","ONCORE_CONTACT_DETAIL_URL"]] 
+        table = grp.get_group(row[to_email]).drop(columns=[to_email]).to_html(index = False, render_links=True, escape=False)
 
-        # # # Send the message via local SMTP server.
-        # s = smtplib.SMTP(host="localhost") 
-        # #s.ehlo()
-        # # sendmail function takes 3 arguments: sender's address, recipient's address
-        # # and message to send - here it is sent as one string.
-        # s.sendmail(fromaddr, toaddr, msg.as_string())
-        # s.quit()
+        # Create the body of the message (a plain-text and an HTML version).
+        text = "Placeholder text for now"
+        html = email_body.format(TABLE = table)
+
+        part1 = MIMEText(html, 'html')
+
+        # Attach parts into message container.
+        # According to RFC 2046, the last part of a multipart message, in this case
+        # the HTML message, is best and preferred.
+        msg.attach(part1)
+
+        # # Send the message via local SMTP server.
+        s = smtplib.SMTP(host="localhost") 
+        #s.ehlo()
+        # sendmail function takes 3 arguments: sender's address, recipient's address
+        # and message to send - here it is sent as one string.
+        s.sendmail(fromaddr, (toaddr+bcc), msg.as_string())
+        s.quit()
 
 
 
