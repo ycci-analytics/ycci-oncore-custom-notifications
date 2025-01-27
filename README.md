@@ -1,1 +1,6 @@
-# ycci-ctms-alert-rpe-staff
+# ycci-ctms-custom-notifications
+
+Introduction
+The YCCI custom notifications repo contains scripts for sending custom email notificaitons to an individual or a group of individuals. The repo is currently organized in a script per custom notification framework where each script contains logic for an individual notification. The decision to organize the repo this way primarily relates to limitations on where and how the team managing the custom notifications is able to deploy them. Currently these notifications must be deployed to a Windows server managed by an external team and to limit the need to install extra dependencies on this server the per notification script approach allows for easily bundling each notification as an .exe with PyInstaller. 
+
+While the current script per notification approach means each notification has its own code the team plans to share the same general framework for setting each script. In most cases the script will contain a connection and query to get data from the application database, some logic to loop through the returned data and use it to format, and finally send the email. The business logic will largely be contained within SQL queries which will be added to this repo under the /notification-queries directory.
