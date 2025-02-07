@@ -8,7 +8,7 @@ sql_query = "select * from oncore_report_ro.ycci_visit_tracking where visit_in_n
 to_email = 'COORDINATOR_EMAIL'
 notification_name = "Upcoming Visits Next 5 days"
 url_field = "CRA_CONSOLE_VISIT_URL"
-email_table_columns = ["PROTOCOL_NO", "SEQUENCE_NUMBER", "SEGMENT_NAME", "VISIT_NAME", f'{url_field}_HTML']
+email_table_columns = ["PROTOCOL_NO", "SEQUENCE_NUMBER", "SEGMENT_NAME", "VISIT_DATE", "VISIT_NAME", f'{url_field}_HTML']
 
 email_body_template = '''
 <html>
@@ -39,7 +39,7 @@ def main():
             pass
         else:
             sent_mail.append(email)
-            email_table = group[email_table_columns].sort_values(by=['PROTOCOL_NO', 'SEQUENCE_NUMBER'])
+            email_table = group[email_table_columns].sort_values(by=['VISIT_DATE','PROTOCOL_NO', 'SEQUENCE_NUMBER'])
             if len(email_table) > 20:
                 excel_buffer = io.BytesIO()
                 with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
