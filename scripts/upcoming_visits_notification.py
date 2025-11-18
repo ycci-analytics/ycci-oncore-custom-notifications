@@ -4,8 +4,8 @@ from email.mime.base import MIMEBase
 import io
 
 # Variables that can be updated for each notification script
-sql_query = "select * from oncore_report_ro.ycci_visit_tracking where visit_in_next_5_days = 'yes' and rownum < 10"
-to_email = 'COORDINATOR_EMAIL'
+sql_query = "select * from oncore_report_ro.ycci_visit_tracking where visit_in_next_5_days = 'yes' and rownum < 2"
+to_email = 'nicholas.vankuren@yale.edu'
 notification_name = "Upcoming Visits Next 5 days"
 url_field = "CRA_CONSOLE_VISIT_URL"
 email_table_columns = ["PROTOCOL_NO", "SEQUENCE_NUMBER", "SEGMENT_NAME", "VISIT_DATE", "VISIT_NAME", f'{url_field}_HTML']
