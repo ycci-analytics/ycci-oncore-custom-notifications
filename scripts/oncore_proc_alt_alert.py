@@ -258,11 +258,13 @@ def main(argv=None):
 
         # --------- Normalize & load dedupe keys ---------
         dfl = df.rename(columns=str.lower).copy()
+        # Normalize to second precision so sub-second differences do not split one logical event.
+        dfl["modified_date_norm"] = pd.to_datetime(dfl["modified_date"]).dt.floor("s")
         sent_keys = load_sent_keys(s_path)
         sent_rows = []
 
-        # --------- Group & send: one email per (visit_id, modified_user_email, modified_date) ---------
-        group_cols = ["visit_id", "modified_user_email", "modified_date"]
+        # --------- Group & send: one email per (visit_id, modified_user_email, modified_date at second precision) ---------
+        group_cols = ["visit_id", "modified_user_email", "modified_date_norm"]
         for (visit_id, modifier, mod_ts), g in dfl.groupby(group_cols, dropna=False):
 
             if not modifier and not dev_mode:
