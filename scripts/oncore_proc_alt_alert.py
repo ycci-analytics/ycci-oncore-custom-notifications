@@ -71,13 +71,20 @@ LOG_DIR = os.getenv("LOG_DIR", "logs")
 # ==========================
 # State & sent-keys helpers
 # ==========================
+def runtime_root() -> Path:
+    """
+    Directory where runtime files should be written.
+    - PyInstaller: directory containing the executable
+    - Script mode: current working directory
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path.cwd().resolve()
+
 def state_path(dev_mode: bool) -> Path:
-    """Return per-env state path (separate file for dev vs prod)."""
-    app_name = penv("STATE_APP_NAME", "OnCoreProcAltAlert") + ("_dev" if dev_mode else "")
-    if os.name == "nt":
-        base = os.getenv("APPDATA", str(Path.home() / "AppData" / "Roaming"))
-        return Path(base) / app_name / "state.json"
-    return Path.home() / ".local" / "share" / app_name / "state.json"
+    """Return per-env state path written in the runtime root directory."""
+    filename = "state_dev.json" if dev_mode else "state.json"
+    return runtime_root() / filename
 
 def load_state(path: Path) -> dict:
     try:
@@ -90,7 +97,8 @@ def save_state(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 def load_sent_keys(s_path: Path) -> set[str]:
-    p = Path(str(s_path)).with_name("sent_keys.json")
+    suffix = "_dev" if s_path.stem.endswith("_dev") else ""
+    p = Path(str(s_path)).with_name(f"sent_keys{suffix}.json")
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
         return set(data.get("keys", []))
@@ -98,8 +106,10 @@ def load_sent_keys(s_path: Path) -> set[str]:
         return set()
 
 def save_sent_keys(s_path: Path, keys: set[str], max_keep: int = 20000) -> None:
-    p = Path(str(s_path)).with_name("sent_keys.json")
-    keys_list = list(keys)
+    suffix = "_dev" if s_path.stem.endswith("_dev") else ""
+    p = Path(str(s_path)).with_name(f"sent_keys{suffix}.json")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    keys_list = sorted(keys)
     if len(keys_list) > max_keep:
         keys_list = keys_list[-max_keep:]
     p.write_text(json.dumps({"keys": keys_list}, indent=2), encoding="utf-8")

@@ -231,7 +231,7 @@ def send_email(to_email, fromname, fromaddr, subject, body, filename=None, attac
     else:
         raise Exception("No environment has been specified")
 
-    bcc = [os.environ.get('BCC_EMAIL')]
+    bcc = [email.strip() for email in os.environ.get('BCC_EMAIL', '').split(';') if email.strip()]
 
     msg = MIMEMultipart("alternative")
     msg["From"] = f"{fromname} <{fromaddr}>"
