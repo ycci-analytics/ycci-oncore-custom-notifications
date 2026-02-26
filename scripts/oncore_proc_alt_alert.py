@@ -50,6 +50,7 @@ VIEW_FQN   = penv("VIEW_FQN", "SCHEMA.VIEW_NAME")
 COL_VISIT  = penv("VISIT_ID_COL", "VISIT_ID")
 COL_MODTS  = penv("MODIFIED_DATE_COL", "MODIFIED_DATE")
 COL_USER   = penv("MODIFIED_USER_EMAIL_COL", "MODIFIED_USER_EMAIL")
+COL_USERNAME = penv("PROCALT_MODIFIED_USER_NAME", "MODIFIED_USER_NAME")
 COL_PROTOCOL = penv("PROTOCOL_NO_COL", "PROTOCOL_NO")
 COL_SUBJECT  = penv("SUBJECT_NAME_COL", "SUBJECT_NAME")
 COL_VDATE    = penv("VISIT_DATE_COL", "VISIT_DATE")
@@ -58,11 +59,11 @@ COL_PROC     = penv("CLINICAL_PROCEDURE_COL", "CLINICAL_PROCEDURE")
 
 # Email sender identity
 FROM_NAME  = penv("ALERT_FROM_NAME", "OnCore Alerts")
-FROM_ADDR  = penv("ALERT_FROM_ADDR", "no-reply@example.org")
+FROM_ADDR  = penv("ALERT_FROM_ADDR", "no-reply@yale.edu")
 
 # Windowing
 LOOKBACK_HOURS = int(penv("LOOKBACK_HOURS", "1"))                 # first-run sweep
-SAFETY_LAG_MIN = int(penv("SAFETY_LAG_MIN", "10"))                # avoids in-flight changes
+SAFETY_LAG_MIN = int(penv("SAFETY_LAG_MIN", "5"))                # avoids in-flight changes
 OVERLAP_MIN    = int(penv("OVERLAP_MIN", "3"))                    # overlap to avoid edge misses
 
 # Optional: where to store logs
@@ -130,6 +131,7 @@ def build_sql(since_dt: datetime, until_dt: datetime) -> str:
             {COL_VISIT}      AS visit_id,
             {COL_MODTS}      AS modified_date,
             {COL_USER}       AS modified_user_email,
+            {COL_USERNAME}   AS modified_user_name,
             {COL_PROTOCOL}   AS protocol_no,
             {COL_SUBJECT}    AS subject_name,
             {COL_VDATE}      AS visit_date,
@@ -149,18 +151,38 @@ def _fmt_date(val) -> str:
     except Exception:
         return str(val or "")
 
-def _section_intro(protocol_no, subject_name, visit_date, missed_count) -> str:
+def _section_intro(modified_user_name, protocol_no, subject_name, visit_date, missed_count) -> str:
     return f"""
-      <p>Hello,</p>
+      <p>Dear {'' if pd.isna(modified_user_name) else modified_user_name}</p>
+      <p></p>
+      <b>Issue Identified:</b>
       <p>
-        You recently modified a visit in OnCore for the following Subject and ePayment procedure alternatives were not selected.
-        Please review the visit and select an appropriate choice for all ePayment procedures.
+        The visit listed below includes an OnCore ePayment in which the ePayment was not confirmed. Without this confirmation, the ePayment cannot be processed and paid to the participant. 
       </p>
       <p>
         <strong>Protocol:</strong> {'' if pd.isna(protocol_no) else protocol_no}<br/>
         <strong>Subject:</strong> {'' if pd.isna(subject_name) else subject_name}<br/>
         <strong>Visit Date:</strong> {_fmt_date(visit_date)}<br/>
         <strong>Missed Procedures (count):</strong> {missed_count}
+      </p>
+    """
+
+def _action_section() -> str:
+    return f"""
+      <br>
+      <b>Action Required: </b>
+      <p>
+       In OnCore, navigate to the visit listed above and update the payment by selecting the correct amount for each participant. Please note the following: 
+      </p>
+      <p>
+        <ul>
+        <li>If a payment is required, choose the correct amount from the drop-down list.</li>
+        <li>If no payment is required, select the <strong>N/A</strong> checkbox and provide the reason not applicable when prompted.</li>
+        <li>Select the <strong>Submit</strong> button to save all changes.</li>
+        </ul>
+      </p>
+      <p>
+      Updating this record will allow the payment process to move forward without further delays. 
       </p>
     """
 
@@ -183,12 +205,17 @@ def build_visit_email_html(g: pd.DataFrame, since_dt: datetime, until_dt: dateti
     """
     g = g.rename(columns=str.lower).copy().sort_values(["visit_date", "clinical_procedure"])
     last_row   = g.iloc[-1]  # metadata should be constant across rows for the group
-    intro_html = _section_intro(last_row.get("protocol_no"), last_row.get("subject_name"),
+    intro_html = _section_intro(last_row.get("modified_user_name"), last_row.get("protocol_no"), last_row.get("subject_name"),
                                 last_row.get("visit_date"), len(g))
     window_html = f"<p>Window: {since_dt:%Y-%m-%d %H:%M} → {until_dt:%Y-%m-%d %H:%M}</p>"
     table_html  = _section_table(g[["visit_date","visit_name","clinical_procedure"]])
-    footer  = "<p style='color:#6a737d'>This email was generated automatically.</p>"
-    return f"<div style='font-family:Segoe UI,Arial,sans-serif;font-size:13px'>{window_html}{intro_html}{table_html}{footer}</div>"
+    action_html = _action_section()
+    footer = (
+    "<p style='color:#6a737d'>This email was generated automatically. "
+    "If you encounter any difficulties or have questions about making these selections, please email "
+    "<a href=\"mailto:ycci_data_ops@yale.edu\">ycci_data_ops@yale.edu</a></p>"
+    )
+    return f"<div style='font-family:Segoe UI,Arial,sans-serif;font-size:13px'>{window_html}{intro_html}{table_html}{action_html}{footer}</div>"
 
 # ==========================
 # Main
