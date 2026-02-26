@@ -131,13 +131,13 @@ def get_db_credentials(db_type='oracle'):
     else:
         raise ValueError("Unsupported database type")
 
-def query_database(sql_query, db_type='oracle'):
+def query_database(sql_query, db_type='oracle', params=None):
     creds = get_db_credentials(db_type)
 
     if db_type == 'oracle':
         with oracledb.connect(user=creds['user'], password=creds['password'], dsn=creds['dsn']) as connection:
             with connection.cursor() as cursor:
-                cursor.execute(sql_query)
+                cursor.execute(sql_query, params or {})
                 col_names = [c.name for c in cursor.description]
                 data = cursor.fetchall()
                 return pd.DataFrame(data, columns=col_names)
@@ -150,10 +150,32 @@ def query_database(sql_query, db_type='oracle'):
         )
         with psycopg.connect(conn_str) as connection:
             with connection.cursor() as cursor:
-                cursor.execute(sql_query)
+                cursor.execute(sql_query, params or {})
                 col_names = [desc.name for desc in cursor.description]
                 data = cursor.fetchall()
                 return pd.DataFrame(data, columns=col_names)
+
+def execute_database(sql_query, db_type='oracle', params=None):
+    creds = get_db_credentials(db_type)
+
+    if db_type == 'oracle':
+        with oracledb.connect(user=creds['user'], password=creds['password'], dsn=creds['dsn']) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(sql_query, params or {})
+            connection.commit()
+            return
+
+    elif db_type == 'postgres':
+        import psycopg
+        conn_str = (
+            f"dbname={creds['dbname']} user={creds['user']} "
+            f"password={creds['password']} host={creds['host']} port={creds['port']}"
+        )
+        with psycopg.connect(conn_str) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(sql_query, params or {})
+            connection.commit()
+            return
             
 def save_to_csv(df, directory='logs'):
     today_date = datetime.today().strftime('%Y-%m-%d')

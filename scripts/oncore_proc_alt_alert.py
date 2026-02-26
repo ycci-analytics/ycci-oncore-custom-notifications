@@ -27,6 +27,7 @@ import pandas as pd
 # ----- import shared helpers from your utils.py -----
 from utils import (
     query_database,
+    execute_database,
     send_email,
     init_daily_logger,
     append_sent_records,
@@ -68,6 +69,9 @@ OVERLAP_MIN    = int(penv("OVERLAP_MIN", "3"))                    # overlap to a
 
 # Optional: where to store logs
 LOG_DIR = os.getenv("LOG_DIR", "logs")
+AUDIT_TABLE = penv("AUDIT_TABLE", os.getenv("AUDIT_TABLE", "NOTIFICATION_AUDIT"))
+AUDIT_SCHEMA_PROD = penv("AUDIT_SCHEMA_PROD", os.getenv("AUDIT_SCHEMA_PROD"))
+AUDIT_SCHEMA_DEV = penv("AUDIT_SCHEMA_DEV", os.getenv("AUDIT_SCHEMA_DEV"))
 
 # ==========================
 # State & sent-keys helpers
@@ -114,6 +118,33 @@ def save_sent_keys(s_path: Path, keys: set[str], max_keep: int = 20000) -> None:
     if len(keys_list) > max_keep:
         keys_list = keys_list[-max_keep:]
     p.write_text(json.dumps({"keys": keys_list}, indent=2), encoding="utf-8")
+
+def _audit_table_fqn(dev_mode: bool) -> str:
+    schema = AUDIT_SCHEMA_DEV if dev_mode else AUDIT_SCHEMA_PROD
+    return f"{schema}.{AUDIT_TABLE}" if schema else AUDIT_TABLE
+
+def write_audit_event(*, dev_mode: bool, event_type: str, visit_id, modified_user_email: str,
+                      dedupe_key: str, job_run_id: str) -> None:
+    table_fqn = _audit_table_fqn(dev_mode)
+    sql = f"""
+        INSERT INTO {table_fqn}
+            (SENT_AT, JOB_CODE, EVENT_TYPE, VISIT_ID, MODIFIED_USER_EMAIL, DEDUPE_KEY, JOB_RUN_ID, ENVIRONMENT)
+        VALUES
+            (SYSTIMESTAMP, :job_code, :event_type, :visit_id, :modified_user_email, :dedupe_key, :job_run_id, :environment)
+    """
+    execute_database(
+        sql_query=sql,
+        db_type="oracle",
+        params={
+            "job_code": JOB_CODE,
+            "event_type": event_type,
+            "visit_id": str(visit_id) if visit_id is not None else None,
+            "modified_user_email": str(modified_user_email) if modified_user_email is not None else None,
+            "dedupe_key": dedupe_key,
+            "job_run_id": job_run_id,
+            "environment": os.getenv("ENVIRONMENT"),
+        },
+    )
 
 # ==========================
 # SQL builder
@@ -326,6 +357,14 @@ def main(argv=None):
 
             # Mark as sent & collect rows for the daily CSV
             sent_keys.add(dedupe_key)
+            write_audit_event(
+                dev_mode=dev_mode,
+                event_type="INITIAL_ALERT",
+                visit_id=visit_id,
+                modified_user_email=modifier,
+                dedupe_key=dedupe_key,
+                job_run_id=job_run_id,
+            )
             g_for_csv = g[["visit_date", "visit_name", "clinical_procedure"]].copy()
             g_for_csv["visit_id"]    = visit_id
             g_for_csv["modified_ts"] = mod_dt.isoformat(timespec="seconds")
